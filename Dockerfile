@@ -1,28 +1,29 @@
-# Use a generic image with Nginx & PHP configured
-# Check https://hub.docker.com/r/richarvey/nginx-php-fpm/tags for the version matching your PHP needs
+# 1. Use the base image
 FROM richarvey/nginx-php-fpm:latest
 
-# Copy application code
-COPY . .
+# 2. Copy application code to the container
+# We copy to /var/www/html which is the default for this image
+COPY . /var/www/html
 
-# Image Configurations
-ENV SKIP_COMPOSER 0
-ENV WEBROOT /var/www/html/public
-ENV PHP_ERRORS_STDERR 1
-ENV RUN_SCRIPTS 1
-ENV REAL_IP_HEADER 1
+# 3. Install Composer dependencies
+# This is the missing step that caused your error!
+RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
 
-# Laravel Configurations (can also be set in Render Dashboard)
-ENV APP_ENV production
-ENV APP_DEBUG false
-ENV LOG_CHANNEL stderr
+# 4. Fix configurations & permissions
+# Ensure the web server owns the files (crucial for storage & cache)
+RUN chown -R www-data:www-data /var/www/html \
+    && chmod -R 775 /var/www/html/storage \
+    && chmod -R 775 /var/www/html/bootstrap/cache
 
-# Allow Composer to run as root
-ENV COMPOSER_ALLOW_SUPERUSER 1
+# 5. Image Environment Variables
+ENV APP_ENV=production
+ENV APP_DEBUG=false
+ENV LOG_CHANNEL=stderr
+ENV COMPOSER_ALLOW_SUPERUSER=1
 
-# Copy the custom entrypoint script and make it executable
+# 6. Setup the Entrypoint Script
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Use the custom script as the main command
-CMD ["entrypoint.sh"]
+# 7. Run the script on start
+CMD ["/usr/local/bin/entrypoint.sh"]
