@@ -12,5 +12,4 @@ echo "Caching configuration and routes..."
 php artisan config:cache
 php artisan route:cache
 
-# Start the web server (The original Docker CMD)
-exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
+exec /usr/bin/supervisord -n -c /etc/supervisor/supervisord.conf
