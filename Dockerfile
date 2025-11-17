@@ -20,5 +20,9 @@ ENV LOG_CHANNEL stderr
 # Allow Composer to run as root
 ENV COMPOSER_ALLOW_SUPERUSER 1
 
-# Install dependencies and permissions
-CMD ["/start.sh"]
+# Copy the custom entrypoint script and make it executable
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Use the custom script as the main command
+CMD ["entrypoint.sh"]
