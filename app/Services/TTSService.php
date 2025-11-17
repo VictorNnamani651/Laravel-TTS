@@ -2,49 +2,49 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Http;
+use Aws\Polly\PollyClient;
 use Illuminate\Support\Facades\Storage;
 
 class TTSService
 {
-    protected $apiKey;
+    protected $pollyClient;
 
     public function __construct()
     {
-        $this->apiKey = config('services.google_tts.api_key');
+        $this->pollyClient = new PollyClient([
+            'version' => 'latest',
+            'region' => config('services.aws.region'),
+            'credentials' => [
+                'key' => config('services.aws.access_key_id'),
+                'secret' => config('services.aws.secret_access_key'),
+            ],
+        ]);
     }
 
     /**
-     * Generate TTS audio from text using Google Cloud TTS
+     * Generate TTS audio from text using Amazon Polly
      */
     public function generateAudio(string $text): string
     {
-        $response = Http::post("https://texttospeech.googleapis.com/v1/text:synthesize?key={$this->apiKey}", [
-            'input' => [
-                'text' => $text,
-            ],
-            'voice' => [
-                'languageCode' => 'en-US',
-                'name' => 'en-US-Neural2-J',
-                'ssmlGender' => 'NEUTRAL',
-            ],
-            'audioConfig' => [
-                'audioEncoding' => 'MP3',
-                'speakingRate' => 1.0,
-                'pitch' => 0.0,
-            ],
-        ]);
+        try {
+            $result = $this->pollyClient->synthesizeSpeech([
+                'Text' => $text,
+                'OutputFormat' => 'mp3',
+                'VoiceId' => 'Joanna', // Female US English voice
+                'Engine' => 'neural', // Use neural engine for better quality
+                'TextType' => 'text',
+            ]);
 
-        if ($response->failed()) {
-            throw new \Exception('Failed to generate TTS audio: ' . $response->body());
+            // Get the audio stream
+            $audioStream = $result->get('AudioStream')->getContents();
+            
+            $filename = 'audio/' . uniqid() . '.mp3';
+            Storage::put($filename, $audioStream);
+
+            return $filename;
+        } catch (\Exception $e) {
+            throw new \Exception('Failed to generate TTS audio with Polly: ' . $e->getMessage());
         }
-
-        $audioContent = base64_decode($response->json()['audioContent']);
-        
-        $filename = 'audio/' . uniqid() . '.mp3';
-        Storage::put($filename, $audioContent);
-
-        return $filename;
     }
 
     /**
@@ -53,12 +53,12 @@ class TTSService
     public function getAudioDuration(string $audioPath): float
     {
         $fullPath = Storage::path($audioPath);
-        $ffprobe = config('services.ffmpeg.ffprobe_path', '/usr/bin/ffprobe');
+        $ffprobe = config('services.ffmpeg.ffprobe_path', 'ffprobe');
         
         $command = sprintf(
-            '%s -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 %s',
-            escapeshellcmd($ffprobe),
-            escapeshellarg($fullPath)
+            '"%s" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "%s" 2>&1',
+            $ffprobe,
+            $fullPath
         );
 
         $duration = shell_exec($command);
