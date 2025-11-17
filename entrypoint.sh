@@ -12,4 +12,4 @@ echo "Caching configuration and routes..."
 php artisan config:cache
 php artisan route:cache
 
-exec /usr/bin/supervisord -n -c /etc/supervisor/supervisord.conf
+exec /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
