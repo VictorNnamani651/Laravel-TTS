@@ -7,41 +7,60 @@ use Illuminate\Support\Facades\Storage;
 
 class ImageService
 {
-    protected $apiKey;
+    protected $accessKey;
 
     public function __construct()
     {
-        $this->apiKey = config('services.pexels.api_key');
+        $this->accessKey = config('services.unsplash.access_key');
     }
 
     /**
-     * Fetch 3 stock images from Pexels based on text query
+     * Fetch 3 stock images from Unsplash based on text query
      */
     public function fetchImages(string $query): array
     {
-        $response = Http::withHeaders([
-            'Authorization' => $this->apiKey,
-        ])->get('https://api.pexels.com/v1/search', [
+        $response = Http::get('https://api.unsplash.com/search/photos', [
             'query' => $query,
             'per_page' => 3,
             'orientation' => 'portrait', // For 1080x1920 video
+            'client_id' => $this->accessKey,
         ]);
 
         if ($response->failed()) {
-            throw new \Exception('Failed to fetch images: ' . $response->body());
+            throw new \Exception('Failed to fetch images from Unsplash: ' . $response->body());
         }
 
-        $photos = $response->json()['photos'] ?? [];
+        $results = $response->json()['results'] ?? [];
         
-        if (empty($photos)) {
-            throw new \Exception('No images found for query: ' . $query);
+        if (empty($results)) {
+            // If no results, try a generic search
+            $response = Http::get('https://api.unsplash.com/search/photos', [
+                'query' => 'nature landscape',
+                'per_page' => 3,
+                'orientation' => 'portrait',
+                'client_id' => $this->accessKey,
+            ]);
+            
+            $results = $response->json()['results'] ?? [];
+        }
+
+        if (empty($results)) {
+            throw new \Exception('No images found on Unsplash for query: ' . $query);
         }
 
         $imagePaths = [];
         
-        foreach (array_slice($photos, 0, 3) as $index => $photo) {
-            // Download portrait version (suitable for vertical video)
-            $imageUrl = $photo['src']['portrait'];
+        foreach (array_slice($results, 0, 3) as $index => $photo) {
+            // Download the regular size image (good quality, not too large)
+            $imageUrl = $photo['urls']['regular'];
+            
+            // Trigger download tracking (required by Unsplash API terms)
+            if (isset($photo['links']['download_location'])) {
+                Http::get($photo['links']['download_location'], [
+                    'client_id' => $this->accessKey,
+                ]);
+            }
+            
             $imageContent = Http::get($imageUrl)->body();
             
             $filename = 'images/' . uniqid() . "_{$index}.jpg";
@@ -62,17 +81,33 @@ class ImageService
         $outputPath = 'images/' . uniqid() . '_resized.jpg';
         $fullOutputPath = Storage::path($outputPath);
 
-        // Use ImageMagick via shell for better quality
+        // Get FFmpeg path from config
+        $ffmpegPath = config('services.ffmpeg.ffmpeg_path', 'ffmpeg');
+
+        // Use FFmpeg for resizing (more reliable than ImageMagick on Windows)
         $command = sprintf(
-            'convert %s -resize 1080x1920^ -gravity center -extent 1080x1920 %s',
-            escapeshellarg($fullPath),
-            escapeshellarg($fullOutputPath)
+            '"%s" -i "%s" -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" -q:v 2 "%s" 2>&1',
+            $ffmpegPath,
+            $fullPath,
+            $fullOutputPath
         );
 
         exec($command, $output, $returnCode);
 
-        if ($returnCode !== 0) {
-            throw new \Exception('Failed to resize image');
+        if ($returnCode !== 0 || !file_exists($fullOutputPath)) {
+            // Fallback: if FFmpeg fails, try ImageMagick
+            $convertCommand = sprintf(
+                'convert "%s" -resize 1080x1920^ -gravity center -extent 1080x1920 "%s"',
+                $fullPath,
+                $fullOutputPath
+            );
+
+            exec($convertCommand, $convertOutput, $convertReturnCode);
+
+            if ($convertReturnCode !== 0 || !file_exists($fullOutputPath)) {
+                // If both fail, just copy the original
+                copy($fullPath, $fullOutputPath);
+            }
         }
 
         return $outputPath;
