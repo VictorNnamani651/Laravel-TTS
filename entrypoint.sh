@@ -1,15 +1,15 @@
 #!/bin/bash
 
-# Exit immediately if a command exits with a non-zero status.
 set -e
 
 echo "Running production setup commands..."
 
 # Run database migrations
-php artisan migrate --force
+php artisan migrate --force || true
 
 echo "Caching configuration and routes..."
 php artisan config:cache
 php artisan route:cache
 
-exec /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
+# Start the default CMD of the base image (nginx + php-fpm)
+exec /start.sh
