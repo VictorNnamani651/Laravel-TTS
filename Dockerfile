@@ -3,10 +3,10 @@ FROM richarvey/nginx-php-fpm:latest
 WORKDIR /var/www/html
 ENV WEBROOT=/var/www/html/public
 
-# Remove default index.php from the image
+
 RUN rm -f /var/www/html/index.php
 
-# Copy your Laravel app
+
 COPY . /var/www/html
 
 RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
