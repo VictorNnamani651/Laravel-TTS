@@ -96,17 +96,17 @@ class VideoService
     $inputFiles = '';
     
     foreach ($imagePaths as $index => $imagePath) {
-        $fullImagePath = Storage::path($imagePath);
-        $inputFiles .= sprintf('-loop 1 -t %d -i "%s" ', $imageDuration, $fullImagePath);
-        
-        // Ken Burns effect: zoom in and pan
-        $filterComplex[] = sprintf(
-            "[%d:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0002,1.2)':d=%d*25:s=1080x1920:fps=25[v%d]",
-            $index,
-            $imageDuration,
-            $index
-        );
-    }
+    $fullImagePath = Storage::path($imagePath);
+    $inputFiles .= sprintf('-loop 1 -t %d -i "%s" ', $imageDuration, $fullImagePath);
+
+    $d = $imageDuration * 25; // frames for zoompan
+
+    $filterComplex[] =
+        "[{$index}:v]scale=1080:1920:force_original_aspect_ratio=increase," .
+        "crop=1080:1920,setsar=1," .
+        "zoompan=z='min(zoom+0.0002,1.2)':d={$d}:s=1080x1920:fps=25" .
+        "[v{$index}]";
+}
     
     // Concatenate videos
     $concatInputs = implode('', array_map(fn($i) => "[v{$i}]", range(0, count($imagePaths) - 1)));
@@ -132,16 +132,16 @@ class VideoService
     
     $filterComplexString = implode(';', $filterComplex);
     
-    // Build FFmpeg command
+    // Build FFmpeg command - removed -shortest flag and using -t 15 for exact duration
     $command = sprintf(
-        '"%s" %s -i "%s" -filter_complex "%s" -map "[outvsub]" -map %d:a -c:v libx264 -preset medium -crf 23 -c:a aac -b:a 128k -shortest -y "%s" 2>&1',
-        $this->ffmpegPath,
-        $inputFiles,
-        $fullAudioPath,
-        $filterComplexString,
-        count($imagePaths), // audio input index
-        $fullOutputPath
-    );
+    '"%s" %s -i "%s" -filter_complex "%s" -map "[outvsub]" -map %d:a -c:v libx264 -preset medium -crf 23 -c:a aac -b:a 128k -y -shortest "%s" 2>&1',
+    $this->ffmpegPath,
+    $inputFiles,
+    $fullAudioPath,
+    $filterComplexString,
+    count($imagePaths), // audio input index
+    $fullOutputPath
+);
 
     exec($command, $output, $returnCode);
 
@@ -150,5 +150,6 @@ class VideoService
     }
 
     return $outputPath;
-    }
+}
+
 }
